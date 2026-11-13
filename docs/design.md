@@ -238,7 +238,7 @@ src/doubao_input/
   - 倾向：先用 A（最省事）；若遇系统 Python 版本/包冲突再切 B。
 - `debian/control` 列出上述 `Depends:`。
 - 提供 **systemd user service**（`doubao-input.service`，`systemctl --user enable --now`），随登录会话常驻。
-- 桌面入口 `doubao-input.desktop`（唤起控制窗口）。
+- 桌面入口 `com.doubao.Input.desktop`（唤起控制窗口；文件名与 GApplication id 一致，GNOME 才能给窗口匹配图标）。
 
 ### 7.3 `postinst`：权限自检（已定：走 `input` 组）
 - 把当前用户加入 `input` 组（`usermod -aG input $SUDO_USER`），并提示需**重新登录**生效。

@@ -49,8 +49,8 @@ override_dh_auto_install:
 
 	# Desktop entry
 	install -d debian/doubao-input/usr/share/applications
-	install -m 0644 debian/doubao-input.desktop \
-	    debian/doubao-input/usr/share/applications/doubao-input.desktop
+	install -m 0644 debian/com.doubao.Input.desktop \
+	    debian/doubao-input/usr/share/applications/com.doubao.Input.desktop
 
 	# App icon — hicolor theme (size 128 covers most uses including
 	# GNOME shell, app grid, and our own Gtk.Image buttons).

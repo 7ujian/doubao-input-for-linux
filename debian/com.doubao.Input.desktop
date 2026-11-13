@@ -6,6 +6,10 @@ GenericName=Voice Input Method
 Comment=按住右 Ctrl 说话,松开自动粘贴到当前输入框
 Comment[en]=Hold right-Ctrl, speak, release to paste into the active input
 Exec=doubao-input
+# 文件名必须与 Gtk.Application 的 application-id (com.doubao.Input) 一致:
+# GNOME 在 Wayland 下按窗口 app-id 匹配同名 .desktop 来显示 Dock/任务栏
+# 图标与名称,名字对不上时窗口只能显示通用占位图标。
+# (本项目面向原生 Wayland;X11 回退路径按 WM_CLASS 匹配。)
 # Use absolute path (not theme name) so the launcher doesn't depend
 # on the icon-theme cache lookup, which GNOME Shell caches per-session
 # and won't refresh until logout/login.

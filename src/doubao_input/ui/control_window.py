@@ -33,6 +33,10 @@ class ControlWindow:
         on_check_mic_clicked: Callable[[], None],
         on_test_inject_clicked: Optional[Callable[[], None]] = None,
         on_minimize_to_tray: Optional[Callable[[], None]] = None,
+        autostart_enabled: bool = False,
+        silent_start: bool = False,
+        on_autostart_toggled: Optional[Callable[[bool], bool]] = None,
+        on_silent_toggled: Optional[Callable[[bool], bool]] = None,
         app: Optional[Gtk.Application] = None,
     ) -> None:
         self._app_state = app_state
@@ -41,6 +45,10 @@ class ControlWindow:
         self._on_check_mic = on_check_mic_clicked
         self._on_test_inject = on_test_inject_clicked
         self._on_minimize_to_tray = on_minimize_to_tray
+        self._autostart_enabled = autostart_enabled
+        self._silent_start = silent_start
+        self._on_autostart_toggled = on_autostart_toggled
+        self._on_silent_toggled = on_silent_toggled
         self._app = app
         self._window: Optional[Gtk.Window] = None
         self._status_label: Optional[Gtk.Label] = None
@@ -261,6 +269,34 @@ class ControlWindow:
         )
         box.append(help)
 
+        # ---- 设置 ----
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        settings_title = Gtk.Label()
+        settings_title.set_xalign(0.0)
+        settings_title.set_markup("<b>设置</b>")
+        box.append(settings_title)
+
+        self._autostart_switch = self._append_switch_row(
+            box,
+            "开机自动启动",
+            self._autostart_enabled,
+            self._on_autostart_toggled,
+        )
+        self._silent_switch = self._append_switch_row(
+            box,
+            "静默启动",
+            self._silent_start,
+            self._on_silent_toggled,
+        )
+        silent_note = Gtk.Label()
+        silent_note.set_xalign(0.0)
+        silent_note.set_wrap(True)
+        silent_note.set_markup(
+            "<small>静默启动:下次启动只进入托盘,不打开本窗口;"
+            "点托盘图标或再次启动可随时打开。</small>"
+        )
+        box.append(silent_note)
+
         tray_btn = Gtk.Button.new_with_label("最小化到托盘")
         if self._on_minimize_to_tray is not None:
             tray_btn.connect("clicked", lambda *_: self._on_minimize_to_tray())
@@ -272,8 +308,36 @@ class ControlWindow:
         quit_btn.connect("clicked", lambda *_: self._on_quit())
         box.append(quit_btn)
 
+        # 窗口按内容自然高度布局。不要套 Gtk.ScrolledWindow:在非
+        # resizable 窗口里它会让窗口停在 set_default_size 的 360 高,
+        # 内容被迫滚动。
         win.set_child(box)
         self._window = win
+
+    @staticmethod
+    def _on_switch_state_set(switch, state, callback) -> bool:
+        """state-set 处理器:回调返回 False 时阻止切换,开关自动回弹。"""
+        ok = callback(bool(state))
+        return ok is False
+
+    def _append_switch_row(self, box, text, active, callback):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        label = Gtk.Label(label=text)
+        label.set_xalign(0.0)
+        label.set_hexpand(True)
+        row.append(label)
+
+        switch = Gtk.Switch()
+        switch.set_active(bool(active))
+        switch.set_valign(Gtk.Align.CENTER)
+        if callback is None:
+            switch.set_sensitive(False)
+        else:
+            switch.connect("state-set", self._on_switch_state_set, callback)
+        row.append(switch)
+
+        box.append(row)
+        return switch
 
     def _on_status_changed(self, *_args) -> None:
         self._refresh_status()

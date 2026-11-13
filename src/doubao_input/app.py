@@ -28,6 +28,13 @@ from doubao_input.doubao.config import INJECT_USE_SHIFT, PASTE_DELAY
 from doubao_input.doubao.params_store import ParamsStore
 from doubao_input.doubao.transcription import TranscriptionManager
 from doubao_input.inject.injector import Injector
+from doubao_input.settings import (
+    Settings,
+    is_autostart_enabled,
+    load_settings,
+    save_settings,
+    set_autostart,
+)
 from doubao_input.trigger.evdev_ptt import EvdevPtt
 from doubao_input.ui.control_window import ControlWindow
 from doubao_input.ui.overlay import Overlay
@@ -56,7 +63,7 @@ def _bind_capture_rms(capture, default_on_rms):
 
 
 class DoubaoInputApp(Gtk.Application):
-    def __init__(self) -> None:
+    def __init__(self, force_show: bool = False) -> None:
         super().__init__(
             application_id="com.doubao.Input",
             flags=Gio_APPLICATION_NON_UNIQUE(),
@@ -76,20 +83,36 @@ class DoubaoInputApp(Gtk.Application):
         self._injector: Injector | None = None
         self._last_press_at: float = 0.0
         self._tray_proc: subprocess.Popen | None = None
+        # 设置
+        self._settings: Settings = load_settings()
+        self._silent_start: bool = self._settings.silent_start
+        # .desktop 的「显示控制窗口」传 --show:即使开了静默启动也强制弹窗
+        self._force_show: bool = force_show
+        # 静默启动 / 最小化到托盘时可能一个窗口都没有;Gtk.Application
+        # 在没有窗口时会自己退出,所以 hold 住,直到 _quit() 显式 quit。
+        self.hold()
 
     # ---- Gtk.Application hooks (signal handlers, not do_*) ----
 
     def _on_activate(self, _app) -> None:
         logger.info("on_activate: setup_done=%s", self._setup_done)
-        if not self._setup_done:
+        first = not self._setup_done
+        if first:
             self._setup_done = True
             self._build()
+
+        # 静默启动:进程首次 activate 时不弹控制窗口,只留托盘 + 右 Ctrl 监听。
+        # 之后用户再启动一次(单实例 activate)或点托盘菜单都会正常打开面板。
+        silent = first and self._silent_start and not self._force_show
+        if silent:
+            logger.info("silent start: staying in tray, control window not shown")
+            return
+
         if self._control:
             self._control.show()
         # Boot-time proof-of-life: briefly flash the floating overlay so
         # the user can see *something* from this app even before they log
         # in. This is the "弹出输入法" signal. Hide it 3 seconds later.
-        from gi.repository import GLib
         GLib.timeout_add(400, self._boot_flash_overlay)
 
     def _boot_flash_overlay(self) -> bool:
@@ -150,6 +173,10 @@ class DoubaoInputApp(Gtk.Application):
             on_check_mic_clicked=self._check_mic,
             on_test_inject_clicked=self._test_inject,
             on_minimize_to_tray=self._hide_to_tray,
+            autostart_enabled=is_autostart_enabled(),
+            silent_start=self._silent_start,
+            on_autostart_toggled=self._on_autostart_toggled,
+            on_silent_toggled=self._on_silent_toggled,
             app=self,
         )
 
@@ -214,25 +241,31 @@ class DoubaoInputApp(Gtk.Application):
                 self._overlay._window.set_visible(False)
             except Exception:
                 pass
-        # Track whether we had to forcibly hide the control window so
-        # we can restore it after the paste.
-        control_was_visible = False
+        # 只有控制窗口**正持有焦点**时才需要藏起来,否则注入的 Ctrl+V 会
+        # 落进我们自己的控件。如果窗口只是可见、但焦点在用户的编辑器里,
+        # 就不要动它 —— 隐藏再 set_visible(True) 会让 Wayland 重新映射
+        # 这个窗口并把它顶到最前面(之前每次语音输入后窗口抢前台的原因)。
+        control_was_active = False
         if self._control and self._control._window:
             try:
-                control_was_visible = self._control._window.get_visible()
-                if control_was_visible:
-                    self._control._window.set_visible(False)
+                window = self._control._window
+                control_was_active = bool(window.get_visible() and window.is_active())
+                if control_was_active:
+                    logger.info(
+                        "_do_paste: control window is focused; hiding it for injection"
+                    )
+                    window.set_visible(False)
             except Exception:
-                control_was_visible = False
+                control_was_active = False
 
         def do_inject():
             logger.info("_do_paste: now injecting %r", text[:30])
             ok = self._injector.inject(text, use_shift=INJECT_USE_SHIFT)
             logger.info("_do_paste: injector.inject returned %s", ok)
-            # Restore control window
+            # Restore control window (仅当它本来就持有焦点时)
             def restore_control():
                 if (
-                    control_was_visible
+                    control_was_active
                     and self._control
                     and self._control._window
                 ):
@@ -404,6 +437,27 @@ class DoubaoInputApp(Gtk.Application):
             self._overlay.show("已最小化到托盘")
             self._overlay.set_text("右 Ctrl 听写继续可用;点托盘图标可重新打开面板")
             GLib.timeout_add(2200, lambda: (self._overlay.hide(), False)[1])
+
+    # ---- settings ----
+
+    def _on_autostart_toggled(self, enabled: bool) -> bool:
+        """开关「开机自动启动」:用户级 mask/unmask systemd 服务。"""
+        ok = set_autostart(enabled)
+        logger.info("settings: autostart -> %s (ok=%s)", enabled, ok)
+        if not ok and self._overlay:
+            self._overlay.show("设置开机自启失败")
+            self._overlay.set_text("无法执行 systemctl --user,详情见日志")
+            GLib.timeout_add(2600, lambda: (self._overlay.hide(), False)[1])
+        return ok
+
+    def _on_silent_toggled(self, enabled: bool) -> bool:
+        """开关「静默启动」:下次进程启动只进托盘,不弹控制窗口。"""
+        self._settings.silent_start = enabled
+        ok = save_settings(self._settings)
+        if ok:
+            self._silent_start = enabled
+            logger.info("settings: silent_start -> %s (next start)", enabled)
+        return ok
 
 
 def Gio_APPLICATION_NON_UNIQUE():

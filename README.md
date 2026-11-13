@@ -34,6 +34,7 @@
 - **会话常驻** —— `systemd --user` 自启;再次启动唤起控制窗口(单实例)。
 - **最小化到托盘** —— 关闭窗口或点「最小化到托盘」后,面板从任务栏消失、右 Ctrl 听写继续在后台运行;
   托盘菜单可重新打开面板或退出。需要 Ayatana AppIndicator(GNOME 另需 AppIndicator 扩展);缺失时静默降级。
+- **设置** —— 「开机自动启动」(systemd 用户服务)与「静默启动」(启动后只进托盘,不弹控制窗口)。
 - **凭证本地化** —— 登录一次,凭证写在 `~/.config/doubao-input/asr_params.json`,复用至下次。
 - **零 sudo 运行** —— 仅需把用户加入 `input` 组(`.deb` 的 `postinst` 自动处理)。
 

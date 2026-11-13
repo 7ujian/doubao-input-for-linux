@@ -62,7 +62,7 @@ def _resolve_icon() -> str:
     return ICON_THEME_NAME
 
 
-def _call(interface: str, method: str, params: GLib.Variant) -> bool:
+def _call(interface: str, method: str, params: GLib.Variant, quiet: bool = False) -> bool:
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         bus.call_sync(
@@ -78,7 +78,8 @@ def _call(interface: str, method: str, params: GLib.Variant) -> bool:
         )
         return True
     except Exception as e:
-        logger.warning("tray: %s.%s failed: %s", interface, method, e)
+        if not quiet:
+            logger.warning("tray: %s.%s failed: %s", interface, method, e)
         return False
 
 
@@ -99,10 +100,12 @@ def _hide_panel() -> None:
 
 
 def _quit_app() -> None:
+    # 主程序在处理这个请求时就会退出,回复可能来不及发出 —— 超时属正常。
     _call(
         "org.gtk.Actions",
         "Activate",
         GLib.Variant("(sava{sv})", ("quit", GLib.Variant("av", []), {})),
+        quiet=True,
     )
     Gtk.main_quit()
 

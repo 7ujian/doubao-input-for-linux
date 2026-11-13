@@ -21,6 +21,8 @@ Depends:
 Recommends:
  python3-pip,
  python3-venv,
+ gir1.2-ayatanaappindicator3-0.1,
+ libayatana-appindicator3-1,
 Suggests:
  python3-numpy,
 Description: Global push-to-hold voice input for Linux/Wayland

@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import sys
 
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk  # type: ignore
+from gi.repository import Gio, GLib, Gtk  # type: ignore
 
 from doubao_input.doubao.app_state import AppState, LoginStatus, RecordingState
 from doubao_input.doubao.asr_client import ASRClient
@@ -74,6 +75,7 @@ class DoubaoInputApp(Gtk.Application):
         self._tm: TranscriptionManager | None = None
         self._injector: Injector | None = None
         self._last_press_at: float = 0.0
+        self._tray_proc: subprocess.Popen | None = None
 
     # ---- Gtk.Application hooks (signal handlers, not do_*) ----
 
@@ -99,6 +101,7 @@ class DoubaoInputApp(Gtk.Application):
 
     def _on_shutdown(self, _app) -> None:
         logger.info("shutting down")
+        self._stop_tray()
         if self._ptt:
             self._ptt.stop()
         if self._injector:
@@ -146,6 +149,7 @@ class DoubaoInputApp(Gtk.Application):
             on_quit_clicked=self._quit,
             on_check_mic_clicked=self._check_mic,
             on_test_inject_clicked=self._test_inject,
+            on_minimize_to_tray=self._hide_to_tray,
             app=self,
         )
 
@@ -164,6 +168,10 @@ class DoubaoInputApp(Gtk.Application):
         if not self._ptt.start():
             logger.warning("evdev PTT failed to start; will retry in background")
             # Don't block; user can still open the control window to diagnose.
+
+        # ---- tray ----
+        self._install_actions()
+        self._start_tray()
 
         logger.info("build complete")
 
@@ -339,7 +347,63 @@ class DoubaoInputApp(Gtk.Application):
             self._ptt.stop()
         if self._injector:
             self._injector.close()
+        self._stop_tray()
         self.quit()
+
+    # ---- tray / background ----
+
+    def _install_actions(self) -> None:
+        """把面板动作导出到 D-Bus,供托盘子进程调用。"""
+        handlers = {
+            "open-panel": self._restore_panel,
+            "hide-panel": self._hide_to_tray,
+            "quit": self._quit,
+        }
+        for name, handler in handlers.items():
+            action = Gio.SimpleAction.new(name, None)
+            action.connect("activate", lambda *_a, h=handler: h())
+            self.add_action(action)
+
+    def _start_tray(self) -> None:
+        if self._tray_proc is not None:
+            return
+        try:
+            # 独立进程:GTK3 与 GTK4 不能同进程共存
+            self._tray_proc = subprocess.Popen(
+                [sys.executable, "-m", "doubao_input.ui.tray"],
+                stdin=subprocess.DEVNULL,
+                env=os.environ.copy(),
+            )
+            logger.info("tray: helper started pid=%s", self._tray_proc.pid)
+        except Exception as e:
+            logger.warning("tray: helper failed to start: %s", e)
+
+    def _stop_tray(self) -> None:
+        proc, self._tray_proc = self._tray_proc, None
+        if proc is None or proc.poll() is not None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+            logger.info("tray: helper stopped")
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            logger.warning("tray: helper killed after timeout")
+
+    def _restore_panel(self) -> None:
+        if self._control:
+            self._control.show()
+        logger.info("tray: control window restored")
+
+    def _hide_to_tray(self) -> None:
+        """隐藏控制窗口:任务栏/dash 图标随之消失,后台继续监听右 Ctrl。"""
+        if self._control:
+            self._control.hide()
+        logger.info("tray: control window hidden; right-Ctrl dictation still active")
+        if self._overlay:
+            self._overlay.show("已最小化到托盘")
+            self._overlay.set_text("右 Ctrl 听写继续可用;点托盘图标可重新打开面板")
+            GLib.timeout_add(2200, lambda: (self._overlay.hide(), False)[1])
 
 
 def Gio_APPLICATION_NON_UNIQUE():

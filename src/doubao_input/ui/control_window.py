@@ -32,6 +32,7 @@ class ControlWindow:
         on_quit_clicked: Callable[[], None],
         on_check_mic_clicked: Callable[[], None],
         on_test_inject_clicked: Optional[Callable[[], None]] = None,
+        on_minimize_to_tray: Optional[Callable[[], None]] = None,
         app: Optional[Gtk.Application] = None,
     ) -> None:
         self._app_state = app_state
@@ -39,6 +40,7 @@ class ControlWindow:
         self._on_quit = on_quit_clicked
         self._on_check_mic = on_check_mic_clicked
         self._on_test_inject = on_test_inject_clicked
+        self._on_minimize_to_tray = on_minimize_to_tray
         self._app = app
         self._window: Optional[Gtk.Window] = None
         self._status_label: Optional[Gtk.Label] = None
@@ -133,6 +135,9 @@ class ControlWindow:
         win.set_default_size(440, 360)
         win.set_resizable(False)
         win.set_destroy_with_parent(True)
+        # 点关闭按钮(X)时只隐藏窗口,不退出进程:面板从任务栏消失,
+        # 右 Ctrl 听写继续在后台运行,可从托盘图标恢复。
+        win.set_hide_on_close(True)
         # Aggressive present: get the display time of the most recent user
         # input event so the window manager treats this as a real user
         # activation (Gdk.CURRENT_TIME is 0 and often ignored by
@@ -249,10 +254,19 @@ class ControlWindow:
             "\n"
             "<b>注意</b>\n"
             "• 终端里需手动 Ctrl+Shift+V\n"
+            "• 关闭窗口或点「最小化到托盘」后,面板从任务栏消失,\n"
+            "  右 Ctrl 听写仍在后台运行;点托盘图标可恢复面板或退出\n"
             "• 凭证保存在 ~/.config/doubao-input/asr_params.json\n"
             "</small>"
         )
         box.append(help)
+
+        tray_btn = Gtk.Button.new_with_label("最小化到托盘")
+        if self._on_minimize_to_tray is not None:
+            tray_btn.connect("clicked", lambda *_: self._on_minimize_to_tray())
+        else:
+            tray_btn.set_sensitive(False)
+        box.append(tray_btn)
 
         quit_btn = Gtk.Button.new_with_label("退出")
         quit_btn.connect("clicked", lambda *_: self._on_quit())

@@ -32,6 +32,8 @@
 - **圆角胶囊悬浮窗** —— 18px 圆角 + 1.5px 白边 + 呼吸 alpha(0.78~0.98 / 2.4s 周期)
   + 每识别出新字触发 220ms 流光闪烁;文字始终纯白粗体不参与动效,保证可读。
 - **会话常驻** —— `systemd --user` 自启;再次启动唤起控制窗口(单实例)。
+- **最小化到托盘** —— 关闭窗口或点「最小化到托盘」后,面板从任务栏消失、右 Ctrl 听写继续在后台运行;
+  托盘菜单可重新打开面板或退出。需要 Ayatana AppIndicator(GNOME 另需 AppIndicator 扩展);缺失时静默降级。
 - **凭证本地化** —— 登录一次,凭证写在 `~/.config/doubao-input/asr_params.json`,复用至下次。
 - **零 sudo 运行** —— 仅需把用户加入 `input` 组(`.deb` 的 `postinst` 自动处理)。
 
@@ -44,6 +46,7 @@
 | 操作系统 | Ubuntu 25.04 / GNOME 48 / Wayland(已在该环境实测) |
 | Python | 3.13 |
 | 音频 | PipeWire / PulseAudio(系统自带) |
+| 托盘(可选) | `gir1.2-ayatanaappindicator3-0.1` + GNOME AppIndicator 扩展 |
 | 用户组 | 当前用户需在 `input` 组(访问 `/dev/input/event*` 与 `/dev/uinput`) |
 
 ---
